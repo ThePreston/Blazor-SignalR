@@ -1,0 +1,411 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "azureblob_1_Connection_Name": {
+      "type": "string",
+      "defaultValue": "azureblob-1"
+    },
+    "azureblob_1_Connection_DisplayName": {
+      "type": "string",
+      "defaultValue": "StorageConnection"
+    },
+    "azureblob_1_accountName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the storage account the connector should use."
+      }
+    },
+    "azureblob_1_accessKey": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Specify a valid primary/secondary storage account access key."
+      }
+    },
+    "azureblob_1_authType": {
+      "type": "string",
+      "metadata": {
+        "description": "Authentication type to connect to your database"
+      },
+      "allowedValues": [
+        "basic",
+        "anonymous"
+      ]
+    },
+    "azureblob_1_privacySetting": {
+      "type": "string",
+      "metadata": {
+        "description": "Privacy Setting"
+      },
+      "allowedValues": [
+        "None",
+        "Private",
+        "Organizational",
+        "Public"
+      ]
+    },
+    "azuretables_1_Connection_Name": {
+      "type": "string",
+      "defaultValue": "azuretables"
+    },
+    "azuretables_1_Connection_DisplayName": {
+      "type": "string",
+      "defaultValue": "TableStorageConnection"
+    },
+    "azuretables_1_storageaccount": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of your storage account"
+      },
+      "defaultValue": "Your-StorageAccount-Here"
+    },
+    "azuretables_1_sharedkey": {
+      "type": "securestring",
+      "metadata": {
+        "description": "The shared storage key of your storage account"
+      }
+    },
+    "azuretables_1_privacySetting": {
+      "type": "string",
+      "metadata": {
+        "description": "Privacy Setting"
+      },
+      "allowedValues": [
+        "None",
+        "Private",
+        "Organizational",
+        "Public"
+      ]
+    },
+    "LogicAppLocation": {
+      "type": "string",
+      "minLength": 1,
+      "allowedValues": [
+        "[resourceGroup().location]",
+        "eastasia",
+        "southeastasia",
+        "centralus",
+        "eastus",
+        "eastus2",
+        "westus",
+        "northcentralus",
+        "southcentralus",
+        "northeurope",
+        "westeurope",
+        "japanwest",
+        "japaneast",
+        "brazilsouth",
+        "australiaeast",
+        "australiasoutheast",
+        "southindia",
+        "centralindia",
+        "westindia",
+        "jioindiawest",
+        "canadacentral",
+        "canadaeast",
+        "uksouth",
+        "ukwest",
+        "westcentralus",
+        "westus2",
+        "koreacentral",
+        "koreasouth",
+        "francecentral",
+        "francesouth",
+        "uaecentral",
+        "uaenorth",
+        "southafricanorth",
+        "southafricawest",
+        "switzerlandnorth",
+        "switzerlandwest",
+        "germanynorth",
+        "germanywestcentral",
+        "norwayeast",
+        "brazilsoutheast",
+        "westus3"
+      ],
+      "defaultValue": "northcentralus"
+    },
+    "LogicAppName": {
+      "type": "string",
+      "minLength": 1,
+      "defaultValue": "TheBlobProcessor"
+    }
+  },
+  "variables": {},
+  "resources": [
+    {
+      "properties": {
+        "state": "Enabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "actions": {
+            "For_each": {
+              "type": "Foreach",
+              "foreach": "@triggerBody()?['Records']",
+              "actions": {
+                "Create_blob_(V2)_2": {
+                  "runAfter": {
+                    "Increment_variable": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "ApiConnection",
+                  "inputs": {
+                    "body": "@items('For_each')",
+                    "headers": {
+                      "ReadFileMetadataFromServer": true
+                    },
+                    "host": {
+                      "connection": {
+                        "name": "@parameters('$connections')['azureblob']['connectionId']"
+                      }
+                    },
+                    "method": "post",
+                    "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/files",
+                    "queries": {
+                      "folderPath": "/logicappmsg",
+                      "name": "@{triggerBody()?['ID']}-@{guid()}-@{variables('LoopCounter')}.txt",
+                      "queryParametersSingleEncoded": true
+                    }
+                  },
+                  "runtimeConfiguration": {
+                    "contentTransfer": {
+                      "transferMode": "Chunked"
+                    }
+                  }
+                },
+                "Increment_variable": {
+                  "type": "IncrementVariable",
+                  "inputs": {
+                    "name": "LoopCounter",
+                    "value": 1
+                  },
+                  "runAfter": {}
+                },
+                "Insert_Entity_2": {
+                  "runAfter": {
+                    "Create_blob_(V2)_2": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "ApiConnection",
+                  "inputs": {
+                    "body": {
+                      "Data": "@{items('For_each')}",
+                      "EventName": "ProcessRow",
+                      "PartitionKey": "@{triggerBody()?['ID']}",
+                      "RowKey": "@{guid()}"
+                    },
+                    "host": {
+                      "connection": {
+                        "name": "@parameters('$connections')['azuretables']['connectionId']"
+                      }
+                    },
+                    "method": "post",
+                    "path": "/Tables/@{encodeURIComponent('BlobProcessorEvents')}/entities"
+                  }
+                }
+              },
+              "runAfter": {
+                "Initialize_variable_2": [
+                  "Succeeded"
+                ]
+              },
+              "operationOptions": "Sequential"
+            },
+            "Initialize_variable": {
+              "type": "InitializeVariable",
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "NumberOfArrayItems",
+                    "type": "integer",
+                    "value": "@length(triggerBody()?['Records'])"
+                  }
+                ]
+              },
+              "runAfter": {
+                "Insert_Entity": [
+                  "Succeeded"
+                ]
+              }
+            },
+            "Initialize_variable_2": {
+              "type": "InitializeVariable",
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "LoopCounter",
+                    "type": "integer",
+                    "value": 0
+                  }
+                ]
+              },
+              "runAfter": {
+                "Initialize_variable": [
+                  "Succeeded"
+                ]
+              }
+            },
+            "Insert_Entity": {
+              "runAfter": {},
+              "type": "ApiConnection",
+              "inputs": {
+                "body": {
+                  "Data": "@{triggerBody()}",
+                  "EventName": "BeginProcess",
+                  "PartitionKey": "@{triggerBody()?['ID']}",
+                  "RowKey": "@{guid()}"
+                },
+                "host": {
+                  "connection": {
+                    "name": "@parameters('$connections')['azuretables']['connectionId']"
+                  }
+                },
+                "method": "post",
+                "path": "/Tables/@{encodeURIComponent('BlobProcessorEvents')}/entities"
+              }
+            },
+            "Insert_Entity_3": {
+              "runAfter": {
+                "For_each": [
+                  "Succeeded"
+                ]
+              },
+              "type": "ApiConnection",
+              "inputs": {
+                "body": {
+                  "Data": "@{triggerBody()}",
+                  "EventName": "EndProcess",
+                  "PartitionKey": "@{triggerBody()?['ID']}",
+                  "RowKey": "@{guid()}"
+                },
+                "host": {
+                  "connection": {
+                    "name": "@parameters('$connections')['azuretables']['connectionId']"
+                  }
+                },
+                "method": "post",
+                "path": "/Tables/@{encodeURIComponent('BlobProcessorEvents')}/entities"
+              }
+            },
+            "Response": {
+              "type": "Response",
+              "inputs": {
+                "statusCode": 200,
+                "body": "Success!   @{triggerBody()?['ID']} successfuly persisted @{variables('NumberOfArrayItems')} \n files"
+              },
+              "runAfter": {
+                "Insert_Entity_3": [
+                  "Succeeded"
+                ]
+              }
+            }
+          },
+          "parameters": {
+            "$connections": {
+              "defaultValue": {},
+              "type": "Object"
+            }
+          },
+          "triggers": {
+            "request": {
+              "type": "Request",
+              "kind": "Http",
+              "inputs": {
+                "schema": {
+                  "properties": {
+                    "ID": {
+                      "type": "string"
+                    },
+                    "Records": {
+                      "items": {
+                        "properties": {
+                          "Data": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "Data"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                },
+                "method": "POST"
+              }
+            }
+          },
+          "contentVersion": "1.0.0.0",
+          "outputs": {}
+        },
+        "parameters": {
+          "$connections": {
+            "value": {
+              "azureblob": {
+                "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', 'northcentralus', '/managedApis/', 'azureblob')]",
+                "connectionId": "[resourceId('Microsoft.Web/connections', parameters('azureblob_1_Connection_Name'))]",
+                "connectionName": "[parameters('azureblob_1_Connection_Name')]"
+              },
+              "azuretables": {
+                "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', 'northcentralus', '/managedApis/', 'azuretables')]",
+                "connectionId": "[resourceId('Microsoft.Web/connections', parameters('azuretables_1_Connection_Name'))]",
+                "connectionName": "[parameters('azuretables_1_Connection_Name')]"
+              }
+            }
+          }
+        }
+      },
+      "name": "[parameters('LogicAppName')]",
+      "type": "Microsoft.Logic/workflows",
+      "location": "[parameters('LogicAppLocation')]",
+      "apiVersion": "2016-06-01",
+      "tags": {
+        "displayName": "LogicApp"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/connections', parameters('azureblob_1_Connection_Name'))]",
+        "[resourceId('Microsoft.Web/connections', parameters('azuretables_1_Connection_Name'))]"
+      ]
+    },
+    {
+      "type": "MICROSOFT.WEB/CONNECTIONS",
+      "apiVersion": "2018-07-01-preview",
+      "name": "[parameters('azureblob_1_Connection_Name')]",
+      "location": "northcentralus",
+      "properties": {
+        "api": {
+          "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', 'northcentralus', '/managedApis/', 'azureblob')]"
+        },
+        "displayName": "[parameters('azureblob_1_Connection_DisplayName')]",
+        "parameterValues": {
+          "accountName": "[parameters('azureblob_1_accountName')]",
+          "accessKey": "[parameters('azureblob_1_accessKey')]",
+          "authType": "[parameters('azureblob_1_authType')]",
+          "privacySetting": "[parameters('azureblob_1_privacySetting')]"
+        }
+      }
+    },
+    {
+      "type": "MICROSOFT.WEB/CONNECTIONS",
+      "apiVersion": "2018-07-01-preview",
+      "name": "[parameters('azuretables_1_Connection_Name')]",
+      "location": "northcentralus",
+      "properties": {
+        "api": {
+          "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', 'northcentralus', '/managedApis/', 'azuretables')]"
+        },
+        "displayName": "[parameters('azuretables_1_Connection_DisplayName')]",
+        "parameterValues": {
+          "storageaccount": "[parameters('azuretables_1_storageaccount')]",
+          "sharedkey": "[parameters('azuretables_1_sharedkey')]",
+          "privacySetting": "[parameters('azuretables_1_privacySetting')]"
+        }
+      }
+    }
+  ],
+  "outputs": {}
+}
