@@ -15,6 +15,7 @@ namespace BlazorSignalRApp.Server
         #region snippet_ConfigureServices
         public void ConfigureServices(IServiceCollection services)
         {
+            
             services.AddSignalR();
             services.AddControllersWithViews();
             services.AddResponseCompression(opts =>
