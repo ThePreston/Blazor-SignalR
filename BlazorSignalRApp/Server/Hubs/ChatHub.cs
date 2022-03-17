@@ -4,29 +4,44 @@ using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
+using Azure.Data.Tables;
+using BlazorSignalRApp.Server.Model;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Configuration;
+using Newtonsoft.Json;
 
 namespace BlazorSignalRApp.Server.Hubs
 {
     public class ChatHub : Hub
     {
-        public ChatHub(IConfiguration configuration)
+        public ChatHub(IConfiguration configuration, TableClient tableClient)
         {
             _config = configuration;
+            _client = tableClient;
         }
 
         private IConfiguration _config;
 
+        private TableClient _client;
+
         public async Task SendMessage(string TransId)
         {
 
-            //Query the storage table for information regarding the Id
+            var retVal = new List<BlobProcess>();
 
-            var newMessage = $" New Line data for  = {TransId}";
+            var recs = _client.QueryAsync<TableEntity>(filter: $"PartitionKey eq '{TransId}'");
 
+            await foreach(var page in recs.AsPages())
+            {
+                foreach(var entity in page.Values)                
+                    retVal.Add(new BlobProcess(TransId, 
+                                               entity.GetString("RowKey"), 
+                                               entity.GetString("EventName"), 
+                                               entity.GetString("Data"), 
+                                               entity.GetDateTime("Timestamp").ToString()));
+            }
 
-            await Clients.All.SendAsync("ReceiveMessage", newMessage);
+            await Clients.All.SendAsync("ReceiveMessage", JsonConvert.SerializeObject(retVal));
         }
 
         public async Task StartProcess(string TransId, string message)

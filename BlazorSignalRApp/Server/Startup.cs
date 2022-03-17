@@ -7,11 +7,21 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using BlazorSignalRApp.Server.Hubs;
+using Azure.Data.Tables;
+
 
 namespace BlazorSignalRApp.Server
 {
     public class Startup
     {
+
+        public Startup(IConfiguration configuration)
+        {
+            Configuration = configuration;
+        }
+
+        public IConfiguration Configuration { get; }
+
         #region snippet_ConfigureServices
         public void ConfigureServices(IServiceCollection services)
         {
@@ -23,6 +33,13 @@ namespace BlazorSignalRApp.Server
                 opts.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(
                     new[] { "application/octet-stream" });
             });
+
+            services.AddScoped(provider =>
+            {
+                return new TableClient(Configuration["StorageTablConnString"],
+                                       Configuration["StorageTableName"]);
+            });
+
         }
         #endregion
 
