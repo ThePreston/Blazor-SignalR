@@ -35,9 +35,8 @@
 {
     private HubConnection hubConnection;
     private List<string> messages = new List<string>();
-    private int messageCountInput = 30;
+    private int messageCountInput = 300;
     private string messageId = Guid.NewGuid().ToString();
-    private int current = 1;
     private string messageInput;
     private DateTime _StartTS;
     private DateTime _ReceiveTS;
@@ -48,26 +47,23 @@
             .WithUrl(NavigationManager.ToAbsoluteUri("/chathub"))
             .Build();
 
-        hubConnection.On<string>("ReceiveMessage", (message) =>
+        hubConnection.On<string[]>("ReceiveMessage", (message) =>
         {
-            var encodedMsg = $"returned : {message}";
-            messages.Add(encodedMsg);
+            
+            foreach(var msg in message)
+                if (!messages.Contains(msg))
+                    messages.Add(msg);
+
             StateHasChanged();
 
-            if (current < messageCountInput - 1)
-            {
-                current++;
+            if(messages.FindAll(s => s.IndexOf("EndProcess", StringComparison.OrdinalIgnoreCase) >= 0).Count == 0)
                 Send().RunSynchronously();
-            }
             else
             {
-                _ReceiveTS = DateTime.UtcNow;
-
-                var latency = _ReceiveTS - _StartTS;
-                messages.Add($"Elapsed Time: ({latency.TotalMilliseconds})");
-                current = 0;
+                messages.Add("Process Completed");
                 StateHasChanged();
             }
+
         });
 
         await hubConnection.StartAsync();
@@ -88,7 +84,6 @@
         messages.Clear();
         _StartTS = DateTime.UtcNow;
         await StartProcess();
-        //await Send();
     }
 
     public bool IsConnected =>

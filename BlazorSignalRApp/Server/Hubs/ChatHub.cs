@@ -28,27 +28,33 @@ namespace BlazorSignalRApp.Server.Hubs
         {
 
             var retVal = new List<BlobProcess>();
+            var retString = new List<string>();
 
             var recs = _client.QueryAsync<TableEntity>(filter: $"PartitionKey eq '{TransId}'");
 
             await foreach(var page in recs.AsPages())
             {
-                foreach(var entity in page.Values)                
-                    retVal.Add(new BlobProcess(TransId, 
-                                               entity.GetString("RowKey"), 
-                                               entity.GetString("EventName"), 
-                                               entity.GetString("Data"), 
-                                               entity.GetDateTime("Timestamp").ToString()));
+                foreach (var entity in page.Values)
+                {
+                    retVal.Add(new BlobProcess(TransId,
+                                               entity.GetString("RowKey"),
+                                               entity.GetString("EventName"),
+                                               entity.GetString("Data"),
+                                               entity.GetDateTime("Timestamp").ToString()));                    
+                }
             }
 
-            await Clients.All.SendAsync("ReceiveMessage", JsonConvert.SerializeObject(retVal));
+            retVal.OrderBy(x => x.Timestamp).ToList()
+                  .ForEach(newObj => retString.Add($"{newObj.EventName}-{newObj.RowKey}-{newObj.Data}-{newObj.Timestamp}"));
+            
+            await Clients.All.SendAsync("ReceiveMessage", retString.ToArray());
         }
 
         public async Task StartProcess(string TransId, string message)
         {
-
+            
             var Responsemessage = "";
-            var iCounter = 0;
+            var RetryCounter = 0;
 
             do
             {
@@ -56,7 +62,7 @@ namespace BlazorSignalRApp.Server.Hubs
                 try
                 {
                     Responsemessage = await InitiateAsyncProcess($"{{ \"ID\":\"{TransId}\",{message} }}");
-                    iCounter++;
+                    RetryCounter++;
                 }
                 catch (Exception ex)
                 {
@@ -64,25 +70,20 @@ namespace BlazorSignalRApp.Server.Hubs
                         Responsemessage = ex.Message.ToString();
                 }
 
-            } while (string.IsNullOrEmpty(Responsemessage) && iCounter < 2);
+            } while (string.IsNullOrEmpty(Responsemessage) && RetryCounter < 2);
 
-            await Clients.All.SendAsync("ReceiveMessage", $"Started - {Responsemessage}");
-
+            await Clients.All.SendAsync("ReceiveMessage", new List<string>() { Responsemessage }.ToArray());
         }
 
         private async Task<string> InitiateAsyncProcess(string clientMessage)
         {
 
             using var reqMessage = GetRequestMessage(HttpMethod.Post, _config["LogicAppURL"], clientMessage);
-            {
+            using var client = new HttpClient();
 
-                using var client = new HttpClient();
+            var resp = await GetMessage(reqMessage);
 
-                var resp = await GetMessage(reqMessage);
-
-                return await resp.Content.ReadAsStringAsync();
-
-            }
+            return await resp.Content.ReadAsStringAsync();
         }
 
         private async Task<HttpResponseMessage> GetMessage(HttpRequestMessage requestMessage)
