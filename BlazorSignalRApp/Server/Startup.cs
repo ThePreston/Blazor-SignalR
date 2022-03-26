@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using BlazorSignalRApp.Server.Hubs;
 using Azure.Data.Tables;
-
+using Microsoft.Extensions.Logging;
 
 namespace BlazorSignalRApp.Server
 {
@@ -25,7 +25,8 @@ namespace BlazorSignalRApp.Server
         #region snippet_ConfigureServices
         public void ConfigureServices(IServiceCollection services)
         {
-            
+            services.AddLogging();
+
             services.AddSignalR();
             services.AddControllersWithViews();
             services.AddResponseCompression(opts =>

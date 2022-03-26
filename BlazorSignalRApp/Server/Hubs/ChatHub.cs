@@ -8,21 +8,25 @@ using Azure.Data.Tables;
 using BlazorSignalRApp.Server.Model;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 
 namespace BlazorSignalRApp.Server.Hubs
 {
     public class ChatHub : Hub
     {
-        public ChatHub(IConfiguration configuration, TableClient tableClient)
+        public ChatHub(IConfiguration configuration, TableClient tableClient, ILogger<ChatHub> logger)
         {
             _config = configuration;
             _client = tableClient;
+            _logger = logger;
         }
 
         private IConfiguration _config;
 
         private TableClient _client;
+
+        private ILogger<ChatHub> _logger;
 
         public async Task SendMessage(string TransId)
         {
@@ -30,23 +34,30 @@ namespace BlazorSignalRApp.Server.Hubs
             var retVal = new List<BlobProcess>();
             var retString = new List<string>();
 
-            var recs = _client.QueryAsync<TableEntity>(filter: $"PartitionKey eq '{TransId}'");
-
-            await foreach(var page in recs.AsPages())
+            try 
             {
-                foreach (var entity in page.Values)
-                {
-                    retVal.Add(new BlobProcess(TransId,
-                                               entity.GetString("RowKey"),
-                                               entity.GetString("EventName"),
-                                               entity.GetString("Data"),
-                                               entity.GetDateTime("Timestamp").ToString()));                    
+
+                var recs = _client.QueryAsync<TableEntity>(filter: $"PartitionKey eq '{TransId}'");
+
+                await foreach (var page in recs.AsPages()) {
+                    foreach (var entity in page.Values) {
+                        retVal.Add(new BlobProcess(TransId,
+                                                   entity.GetString("RowKey"),
+                                                   entity.GetString("EventName"),
+                                                   entity.GetString("Data"),
+                                                   entity.GetDateTime("Timestamp").ToString()));
+                    }
                 }
+
+                retVal.OrderBy(x => x.Timestamp).ToList()
+                      .ForEach(newObj => retString.Add($"{newObj.EventName}-{newObj.RowKey}-{newObj.Data}-{newObj.Timestamp}"));
+
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"SendMessage {TransId}");
             }
 
-            retVal.OrderBy(x => x.Timestamp).ToList()
-                  .ForEach(newObj => retString.Add($"{newObj.EventName}-{newObj.RowKey}-{newObj.Data}-{newObj.Timestamp}"));
-            
             await Clients.All.SendAsync("ReceiveMessage", retString.ToArray());
         }
 
@@ -66,6 +77,7 @@ namespace BlazorSignalRApp.Server.Hubs
                 }
                 catch (Exception ex)
                 {
+                    _logger.LogError(ex, $"Connection issue on StartProcess attempt {RetryCounter}");
                     if (!ex.Message.Contains("No such host is known"))
                         Responsemessage = ex.Message.ToString();
                 }
@@ -90,7 +102,6 @@ namespace BlazorSignalRApp.Server.Hubs
         {
             using var client = new HttpClient();
             return await client.SendAsync(requestMessage);
-
         }
 
         private static HttpRequestMessage GetRequestMessage(HttpMethod method, string requestURI, string body)
